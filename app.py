@@ -217,8 +217,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-
-
     st.divider()
 
     # Supported Descriptors
@@ -570,6 +568,7 @@ else:
             options=list(categories_dict.keys()),
             index=0,
             help="Filter descriptors by scientific domain",
+            key="category_select",
         )
 
     with ctrl_col3:
@@ -578,10 +577,18 @@ else:
             options=list(presets_dict.keys()),
             index=0,
             help="Quickly load pre-defined descriptor subsets",
+            key="preset_select",
         )
 
     with ctrl_col4:
-        rows_limit = st.selectbox("Rows", options=[10, 25, 50, 100, "All"], index=0)
+        rows_limit = st.selectbox("Rows", options=[10, 25, 50, 100, "All"], index=0, key="rows_select")
+
+    # Clear custom multiselect when dropdowns change so filters update reactively
+    current_filter_key = f"{search_query.strip()}_{selected_category}_{selected_preset}"
+    if st.session_state.get("prev_filter_key") != current_filter_key:
+        st.session_state["prev_filter_key"] = current_filter_key
+        if "custom_col_multiselect" in st.session_state:
+            del st.session_state["custom_col_multiselect"]
 
     # Informational Tooltip / Callout for LogP descriptors
     has_logp_in_search = "logp" in search_query.lower() if search_query else False
@@ -591,37 +598,21 @@ else:
             unsafe_allow_html=True,
         )
 
-    # Handle Search & Selection Logic
-    active_selected_cols = []
-
-    # Priority 1: Preset selection base
-    preset_cols = presets_dict.get(selected_preset, [])
-
-    # Priority 2: Category filter
-    category_cols = categories_dict.get(selected_category, all_columns)
-
-    # Priority 3: Explicit search query matching
-    matched_search_cols = search_descriptor_columns(all_columns, search_query) if search_query.strip() else []
-
+    # Reactive Filter Determination
     if search_query.strip():
+        matched_search_cols = search_descriptor_columns(all_columns, search_query)
         if matched_search_cols:
             st.markdown(f"**Matching Descriptors for '{search_query.strip()}'** ({len(matched_search_cols)} found):")
-            chosen_searched = st.multiselect(
-                "Select matching descriptors to display:",
-                options=matched_search_cols,
-                default=matched_search_cols[: min(10, len(matched_search_cols))],
-                key="searched_multiselect",
-            )
-            active_selected_cols = chosen_searched
+            active_selected_cols = matched_search_cols
         else:
             st.info(f"No descriptors found matching '{search_query.strip()}'.")
             active_selected_cols = []
     elif selected_category != "All Columns":
-        active_selected_cols = category_cols
+        active_selected_cols = categories_dict.get(selected_category, all_columns)
     else:
-        active_selected_cols = preset_cols
+        active_selected_cols = presets_dict.get(selected_preset, all_columns)
 
-    # Additional Manual Column Picker
+    # Manual Custom Column Selector
     with st.expander("Custom Column Selector (Add/Remove specific columns)"):
         user_custom_cols = st.multiselect(
             "Select specific columns to inspect:",
@@ -630,12 +621,12 @@ else:
             key="custom_col_multiselect",
         )
         if user_custom_cols:
-            active_selected_cols = user_custom_cols
+            active_selected_cols = ["Name"] + [c for c in user_custom_cols if c != "Name"]
 
     # Molecule Search Row Filter
     col_mol_search, _ = st.columns([2, 2])
     with col_mol_search:
-        mol_search_query = st.text_input("Search molecules by name", placeholder="e.g. Ethanol, Molecule_001")
+        mol_search_query = st.text_input("Search molecules by name", placeholder="e.g. Ethanol, Molecule_001", key="mol_search")
 
     # Apply filters to preview DataFrame
     filtered_df = filter_preview_dataframe(
